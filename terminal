@@ -1,0 +1,5 @@
+mkdir pixi-typescript-game
+cd pixi-typescript-game
+npm init -y
+npm install vite @types/node
+npm install 
