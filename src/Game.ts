@@ -1,4 +1,6 @@
 import { inputData } from "./input";
+import { gsap } from "gsap";
+import * as PIXI from "pixi.js";
 
 /**
  * Game class handles the main game logic and PIXI application setup
@@ -10,14 +12,25 @@ export class Game {
   private app: PIXI.Application;
 
   /** Movement speed for sprite translations */
-  private speed = 1;
+  private speed = 10; // Increased speed to 10
+
+  /** Duration of each movement in seconds */
+  private readonly MOVEMENT_DURATION = 0.5; // 1 second per movement
+
+  /** Delay between movements in seconds */
+  private readonly DELAY_BETWEEN_MOVES = 0.1; // 1 second delay between movements
+
+  private assetBunny = {
+    alias: "bunny",
+    src: "https://pixijs.io/examples/examples/assets/bunny.png",
+  };
 
   /**
    * Creates a new Game instance and initializes PIXI application
    * @constructor
    */
   constructor() {
-    this.app = new window.PIXI.Application({
+    this.app = new PIXI.Application({
       width: 800,
       height: 600,
       backgroundColor: 0x1099bb,
@@ -30,8 +43,63 @@ export class Game {
    * @public
    */
   public initialize(): void {
-    document.body.appendChild(this.app.view);
-    this.start();
+    document.body.appendChild(this.app.view as HTMLCanvasElement);
+    this.showLoadingScreen();
+    this.loadAssets();
+  }
+
+  private showLoadingScreen(): void {
+    const loadingText = new PIXI.Text("Loading... 0%", {
+      fontFamily: "Arial",
+      fontSize: 24,
+      fill: 0xffffff,
+    });
+    loadingText.anchor.set(0.5);
+    loadingText.x = this.app.screen.width / 2;
+    loadingText.y = this.app.screen.height / 2;
+    this.app.stage.addChild(loadingText);
+  }
+
+  private async loadAssets(): Promise<void> {
+    try {
+      const loadingText = this.app.stage.children[0] as PIXI.Text;
+
+      // Initialize assets
+      await PIXI.Assets.init();
+
+      // Add bundle
+      PIXI.Assets.addBundle("game-bundle", {
+        bunny: this.assetBunny.src,
+      });
+
+      // Load bundle with progress
+      const textures = await PIXI.Assets.loadBundle(
+        "game-bundle",
+        (progress) => {
+          loadingText.text = `Loading... ${Math.floor(progress * 100)}%`;
+        }
+      );
+
+      if (!textures.bunny) {
+        throw new Error("Failed to load bunny texture");
+      }
+
+      console.log("Texture loaded successfully");
+      this.app.stage.removeChildren();
+      this.start(textures.bunny);
+    } catch (error) {
+      console.error("Error loading assets:", error);
+      const errorText = new PIXI.Text("Error loading game assets", {
+        fontFamily: "Arial",
+        fontSize: 24,
+        fill: 0xff0000,
+      });
+      errorText.anchor.set(0.5);
+      errorText.x = this.app.screen.width / 2;
+      errorText.y = this.app.screen.height / 2;
+      this.app.stage.removeChildren();
+      this.app.stage.addChild(errorText);
+    }
   }
 
   /**
@@ -39,44 +107,35 @@ export class Game {
    * @private
    * @description Creates sprite, processes movement commands, and sets up game ticker
    */
-  private start(): void {
-    const sprite: PIXI.Sprite = window.PIXI.Sprite.from(
-      "https://pixijs.io/examples/examples/assets/bunny.png"
-    );
+  private start(texture: PIXI.Texture): void {
+    const sprite = new PIXI.Sprite(texture);
     sprite.anchor.set(0.5);
+    sprite.x = 400; // Center the sprite horizontally
+    sprite.y = 300; // Center the sprite vertically
 
     this.app.stage.addChild(sprite);
+    this.createAnimationTimeline(sprite);
+  }
 
-    /**
-     * Handles sprite rotation based on direction and command
-     * @param {string} dir - Direction of movement ('L' or 'R')
-     * @param {string} command - Command modifier ('+' or '-')
-     */
-    const rotate = (dir: string, command: string) => {
-      const vel = command === "-" ? -this.speed : this.speed;
-      if (dir === "L") {
-        sprite.x += vel;
-      } else {
-        sprite.x += vel * -1;
-      }
-      console.log(sprite.x);
-    };
+  private createAnimationTimeline(sprite: PIXI.Sprite): void {
+    const timeline = gsap.timeline();
+    let currentX = sprite.x; // Track current position
 
-    // Process each input command
     inputData.forEach((input) => {
-      const dir = input.charAt(0) as string;
-      const command = input.slice(1, input.length);
+      const command = input.slice(1)[0];
+      const magnitude = command === "+" ? this.speed : -this.speed;
+      currentX += magnitude; // Update position for next movement
 
-      for (let i = 0; i < command.length; i++) {
-        console.log("commands:", command.length);
-        for (let j = 0; j < command.length; j++) {
-          rotate(dir, command[i][j]);
-        }
-      }
+      timeline.to(sprite, {
+        x: currentX,
+        duration: this.MOVEMENT_DURATION,
+        ease: "back.in",
+        delay: this.DELAY_BETWEEN_MOVES,
+      });
     });
 
-    console.log("Final output ", sprite.x);
-
-    this.app.ticker.add(() => {});
+    timeline.then(() => {
+      console.log("Animation sequence complete! Final position:", sprite.x);
+    });
   }
 }
