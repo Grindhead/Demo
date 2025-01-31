@@ -3,30 +3,38 @@ import { gsap } from "gsap";
 import * as PIXI from "pixi.js";
 
 /**
- * Game class handles the main game logic and PIXI application setup
+ * Game class handles sprite animation based on input commands
  * @class Game
- * @description Manages the game state, sprite movement, and rendering
+ * @description Manages asset loading, sprite creation, and GSAP animation sequences
  */
 export class Game {
-  /** PIXI Application instance */
+  /** PIXI Application instance for rendering */
   private app: PIXI.Application;
 
-  /** Movement speed for sprite translations */
-  private speed = 10; // Increased speed to 10
+  /** Movement speed in pixels per step */
+  private speed = 10;
 
-  /** Duration of each movement in seconds */
-  private readonly MOVEMENT_DURATION = 0.5; // 1 second per movement
+  /** Duration of each movement animation in seconds */
+  private readonly MOVEMENT_DURATION = 0.5;
 
-  /** Delay between movements in seconds */
-  private readonly DELAY_BETWEEN_MOVES = 0.1; // 1 second delay between movements
+  /** Delay between consecutive movements in seconds */
+  private readonly DELAY_BETWEEN_MOVES = 0.1;
 
-  private assetBunny = {
-    alias: "bunny",
-    src: "https://pixijs.io/examples/examples/assets/bunny.png",
-  };
+  /** Minimum loading time in seconds */
+  private readonly MIN_LOADING_TIME = 1;
+
+  /** Asset URL for the sprite */
+  private readonly SPRITE_URL =
+    "https://pixijs.io/examples/examples/assets/bunny.png";
+
+  /** Container for loading scene */
+  private loadingScene: PIXI.Container;
+
+  /** Container for game scene */
+  private gameScene: PIXI.Container;
 
   /**
-   * Creates a new Game instance and initializes PIXI application
+   * Creates a new Game instance with PIXI application setup
    * @constructor
    */
   constructor() {
@@ -36,10 +44,21 @@ export class Game {
       backgroundColor: 0x1099bb,
       resolution: window.devicePixelRatio || 1,
     });
+
+    // Initialize scenes
+    this.loadingScene = new PIXI.Container();
+    this.gameScene = new PIXI.Container();
+
+    // Add scenes to stage
+    this.app.stage.addChild(this.loadingScene);
+    this.app.stage.addChild(this.gameScene);
+
+    // Hide game scene initially
+    this.gameScene.alpha = 0;
   }
 
   /**
-   * Initializes the game by appending the PIXI canvas and starting the game loop
+   * Initializes the game by creating canvas and starting asset loading
    * @public
    */
   public initialize(): void {
@@ -48,6 +67,10 @@ export class Game {
     this.loadAssets();
   }
 
+  /**
+   * Creates and displays the loading screen
+   * @private
+   */
   private showLoadingScreen(): void {
     const loadingText = new PIXI.Text("Loading... 0%", {
       fontFamily: "Arial",
@@ -57,55 +80,67 @@ export class Game {
     loadingText.anchor.set(0.5);
     loadingText.x = this.app.screen.width / 2;
     loadingText.y = this.app.screen.height / 2;
-    this.app.stage.addChild(loadingText);
+    this.loadingScene.addChild(loadingText);
   }
 
+  /**
+   * Loads game assets using PIXI's asset system with minimum loading time
+   * @private
+   * @async
+   * @throws {Error} When asset loading fails
+   */
   private async loadAssets(): Promise<void> {
     try {
-      const loadingText = this.app.stage.children[0] as PIXI.Text;
+      const loadingText = this.loadingScene.children[0] as PIXI.Text;
+      const startTime = Date.now();
 
-      // Initialize assets
+      // Fade in loading text
+      loadingText.alpha = 0;
+      await new Promise<void>((resolve) => {
+        gsap.to(loadingText, {
+          alpha: 1,
+          duration: 0.5,
+          ease: "power2.inOut",
+          onComplete: resolve,
+        });
+      });
+
+      // Clear cache and reinitialize assets
+      PIXI.Assets.reset();
       await PIXI.Assets.init();
 
-      // Add bundle
-      PIXI.Assets.addBundle("game-bundle", {
-        bunny: this.assetBunny.src,
-      });
+      // Simple progress simulation
+      const updateProgress = (progress: number) => {
+        loadingText.text = `Loading... ${Math.floor(progress * 100)}%`;
+      };
 
-      // Load bundle with progress
-      const textures = await PIXI.Assets.loadBundle(
-        "game-bundle",
-        (progress) => {
-          loadingText.text = `Loading... ${Math.floor(progress * 100)}%`;
-        }
-      );
+      // Load asset
+      const texture = await PIXI.Assets.load(this.SPRITE_URL, updateProgress);
 
-      if (!textures.bunny) {
-        throw new Error("Failed to load bunny texture");
+      // Ensure minimum display time
+      const elapsedTime = (Date.now() - startTime) / 1000;
+      if (elapsedTime < this.MIN_LOADING_TIME) {
+        await new Promise((resolve) =>
+          setTimeout(resolve, (this.MIN_LOADING_TIME - elapsedTime) * 1000)
+        );
       }
 
-      console.log("Texture loaded successfully");
-      this.app.stage.removeChildren();
-      this.start(textures.bunny);
+      // Show 100% briefly
+      updateProgress(1);
+      await new Promise((resolve) => setTimeout(resolve, 300));
+
+      // Transition to game
+      await this.transitionToGame(texture);
     } catch (error) {
       console.error("Error loading assets:", error);
-      const errorText = new PIXI.Text("Error loading game assets", {
-        fontFamily: "Arial",
-        fontSize: 24,
-        fill: 0xff0000,
-      });
-      errorText.anchor.set(0.5);
-      errorText.x = this.app.screen.width / 2;
-      errorText.y = this.app.screen.height / 2;
-      this.app.stage.removeChildren();
-      this.app.stage.addChild(errorText);
+      this.showError();
     }
   }
 
   /**
-   * Starts the game loop and processes input commands
+   * Starts the game with the loaded texture
    * @private
-   * @description Creates sprite, processes movement commands, and sets up game ticker
+   * @param {PIXI.Texture} texture - The loaded sprite texture
    */
   private start(texture: PIXI.Texture): void {
     const sprite = new PIXI.Sprite(texture);
@@ -117,6 +152,15 @@ export class Game {
     this.createAnimationTimeline(sprite);
   }
 
+  /**
+   * Creates a GSAP timeline for sprite movement animation
+   * @private
+   * @param {PIXI.Sprite} sprite - The sprite to animate
+   * @description Creates a sequence of movements based on input commands:
+   * - '+' moves right by speed amount
+   * - '-' moves left by speed amount
+   * Each movement takes MOVEMENT_DURATION seconds with DELAY_BETWEEN_MOVES pause
+   */
   private createAnimationTimeline(sprite: PIXI.Sprite): void {
     const timeline = gsap.timeline();
     let currentX = sprite.x; // Track current position
@@ -137,5 +181,60 @@ export class Game {
     timeline.then(() => {
       console.log("Animation sequence complete! Final position:", sprite.x);
     });
+  }
+
+  private async transitionToGame(texture: PIXI.Texture): Promise<void> {
+    // Setup game scene before transition
+    this.setupGameScene(texture);
+
+    // Create and execute transition timeline
+    await new Promise<void>((resolve) => {
+      const timeline = gsap.timeline({
+        onComplete: () => {
+          this.loadingScene.removeChildren();
+          resolve();
+        },
+      });
+
+      timeline
+        .to(this.loadingScene, {
+          alpha: 0,
+          duration: 0.5,
+          ease: "power2.inOut",
+        })
+        .to(
+          this.gameScene,
+          {
+            alpha: 1,
+            duration: 0.5,
+            ease: "power2.inOut",
+          },
+          "-=0.3"
+        );
+    });
+  }
+
+  private setupGameScene(texture: PIXI.Texture): void {
+    const sprite = new PIXI.Sprite(texture);
+    sprite.anchor.set(0.5);
+    sprite.x = 400;
+    sprite.y = 300;
+
+    this.gameScene.addChild(sprite);
+    this.createAnimationTimeline(sprite);
+  }
+
+  private showError(): void {
+    const errorText = new PIXI.Text("Error loading game assets", {
+      fontFamily: "Arial",
+      fontSize: 24,
+      fill: 0xff0000,
+    });
+    errorText.anchor.set(0.5);
+    errorText.x = this.app.screen.width / 2;
+    errorText.y = this.app.screen.height / 2;
+
+    this.loadingScene.removeChildren();
+    this.loadingScene.addChild(errorText);
   }
 }
