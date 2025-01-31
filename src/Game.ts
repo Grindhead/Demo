@@ -120,7 +120,6 @@ export class Game {
   private async loadAssets(): Promise<void> {
     try {
       const loadingText = this.loadingScene.children[0] as PIXI.Text;
-      const startTime = Date.now();
 
       // Fade in loading text
       loadingText.alpha = 0;
@@ -180,21 +179,6 @@ export class Game {
       console.error("Error loading assets:", error);
       this.showError();
     }
-  }
-
-  /**
-   * Starts the game with the loaded texture
-   * @private
-   * @param {PIXI.Texture} texture - The loaded sprite texture
-   */
-  private start(texture: PIXI.Texture): void {
-    const sprite = new PIXI.Sprite(texture);
-    sprite.anchor.set(0.5);
-    sprite.x = 400; // Center the sprite horizontally
-    sprite.y = 300; // Center the sprite vertically
-
-    this.app.stage.addChild(sprite);
-    this.createAnimationTimeline(sprite);
   }
 
   /**
