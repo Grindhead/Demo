@@ -63,8 +63,35 @@ export class Game {
    */
   public initialize(): void {
     document.body.appendChild(this.app.view as HTMLCanvasElement);
+
+    // Start with both scenes invisible
+    this.loadingScene.alpha = 0;
+    this.gameScene.alpha = 0;
+
     this.showLoadingScreen();
-    this.loadAssets();
+    this.fadeInLoader();
+  }
+
+  /**
+   * Fades in the loading scene
+   * @private
+   */
+  private async fadeInLoader(): Promise<void> {
+    // Wait for a frame to ensure everything is set up
+    await new Promise((resolve) => setTimeout(resolve, 100));
+
+    // Fade in the loading scene
+    await new Promise<void>((resolve) => {
+      gsap.to(this.loadingScene, {
+        alpha: 1,
+        duration: 0.8,
+        ease: "power2.inOut",
+        onComplete: resolve,
+      });
+    });
+
+    // Start loading assets after fade in completes
+    await this.loadAssets();
   }
 
   /**
@@ -80,6 +107,7 @@ export class Game {
     loadingText.anchor.set(0.5);
     loadingText.x = this.app.screen.width / 2;
     loadingText.y = this.app.screen.height / 2;
+    loadingText.alpha = 0; // Start with text invisible
     this.loadingScene.addChild(loadingText);
   }
 
@@ -109,24 +137,41 @@ export class Game {
       PIXI.Assets.reset();
       await PIXI.Assets.init();
 
-      // Simple progress simulation
-      const updateProgress = (progress: number) => {
-        loadingText.text = `Loading... ${Math.floor(progress * 100)}%`;
-      };
+      // Show initial loading state
+      loadingText.text = "Loading... 0%";
+
+      // Simulate loading progress while actual loading happens
+      const progressTimeline = gsap.timeline();
+      progressTimeline.to(
+        {},
+        {
+          duration: this.MIN_LOADING_TIME,
+          onUpdate: () => {
+            const progress = progressTimeline.progress();
+            loadingText.text = `Loading... ${Math.floor(progress * 90)}%`;
+          },
+        }
+      );
 
       // Load asset
-      const texture = await PIXI.Assets.load(this.SPRITE_URL, updateProgress);
+      const texture = await PIXI.Assets.load(this.SPRITE_URL);
 
-      // Ensure minimum display time
-      const elapsedTime = (Date.now() - startTime) / 1000;
-      if (elapsedTime < this.MIN_LOADING_TIME) {
-        await new Promise((resolve) =>
-          setTimeout(resolve, (this.MIN_LOADING_TIME - elapsedTime) * 1000)
-        );
-      }
+      // Complete the progress to 100%
+      gsap.to(
+        {},
+        {
+          duration: 0.3,
+          onUpdate: () => {
+            const progress = Math.min(1, progressTimeline.progress() + 0.1);
+            loadingText.text = `Loading... ${Math.floor(progress * 100)}%`;
+          },
+          onComplete: () => {
+            loadingText.text = "Loading... 100%";
+          },
+        }
+      );
 
-      // Show 100% briefly
-      updateProgress(1);
+      // Pause at 100%
       await new Promise((resolve) => setTimeout(resolve, 300));
 
       // Transition to game
