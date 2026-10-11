@@ -10,5 +10,9 @@
     "vite": "^6.0.11",
     "gsap": "^3.12.5",
     "pixi.js": "^7.4.0"
+  },
+  "devDependencies": {
+    "typescript": "5.7.3",
+    "@types/node": "22.10.10"
   }
 }
